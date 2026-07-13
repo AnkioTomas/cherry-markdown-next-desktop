@@ -1,0 +1,20 @@
+{
+  "name": "cherry-markdown-next-desktop",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "tauri": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  },
+  "private": true,
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
+  }
+}
