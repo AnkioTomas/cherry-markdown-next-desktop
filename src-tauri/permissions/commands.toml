@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-env"
+description = "Read process environment variables"
+commands.allow = ["get_env"]
+
+[[permission]]
+identifier = "allow-run-command"
+description = "Run local upload CLI / scripts"
+commands.allow = ["run_command"]
