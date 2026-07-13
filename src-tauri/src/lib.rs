@@ -1,6 +1,103 @@
+use serde::Serialize;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandResult {
+  stdout: String,
+  stderr: String,
+  code: Option<i32>,
+}
+
+#[tauri::command]
+fn get_env(name: String) -> Option<String> {
+  std::env::var(name).ok()
+}
+
+#[tauri::command]
+fn run_command(
+  command: String,
+  args: Vec<String>,
+  cwd: String,
+  timeout_ms: u64,
+) -> Result<CommandResult, String> {
+  if command.trim().is_empty() {
+    return Err("command is empty".into());
+  }
+
+  let timeout = Duration::from_millis(timeout_ms.max(1000));
+  let mut child = Command::new(&command)
+    .args(&args)
+    .current_dir(if cwd.is_empty() { "." } else { &cwd })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .map_err(|e| format!("failed to spawn `{command}`: {e}"))?;
+
+  let mut stdout_pipe = child
+    .stdout
+    .take()
+    .ok_or_else(|| "missing stdout pipe".to_string())?;
+  let mut stderr_pipe = child
+    .stderr
+    .take()
+    .ok_or_else(|| "missing stderr pipe".to_string())?;
+
+  let stdout_handle = std::thread::spawn(move || {
+    let mut buf = Vec::new();
+    let _ = stdout_pipe.read_to_end(&mut buf);
+    buf
+  });
+  let stderr_handle = std::thread::spawn(move || {
+    let mut buf = Vec::new();
+    let _ = stderr_pipe.read_to_end(&mut buf);
+    buf
+  });
+
+  let start = Instant::now();
+  let status = loop {
+    match child.try_wait() {
+      Ok(Some(status)) => break status,
+      Ok(None) => {
+        if start.elapsed() > timeout {
+          let _ = child.kill();
+          let _ = child.wait();
+          return Err(format!(
+            "command timed out after {}ms",
+            timeout.as_millis()
+          ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+      }
+      Err(e) => return Err(format!("wait failed: {e}")),
+    }
+  };
+
+  let stdout = stdout_handle
+    .join()
+    .map(|b| String::from_utf8_lossy(&b).into_owned())
+    .unwrap_or_default();
+  let stderr = stderr_handle
+    .join()
+    .map(|b| String::from_utf8_lossy(&b).into_owned())
+    .unwrap_or_default();
+
+  Ok(CommandResult {
+    stdout,
+    stderr,
+    code: status.code(),
+  })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_store::Builder::new().build())
+    .plugin(tauri_plugin_shell::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -11,6 +108,7 @@ pub fn run() {
       }
       Ok(())
     })
+    .invoke_handler(tauri::generate_handler![get_env, run_command])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

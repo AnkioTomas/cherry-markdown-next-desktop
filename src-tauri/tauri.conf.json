@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "cherry-markdown-next-desktop",
+  "productName": "Cherry Markdown Next",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "net.ankio.cherry-markdown-next-desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,15 +12,19 @@
   "app": {
     "windows": [
       {
-        "title": "cherry-markdown-next-desktop",
-        "width": 800,
-        "height": 600,
+        "title": "Cherry Markdown Next",
+        "width": 1280,
+        "height": 800,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {
@@ -31,10 +35,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
-    }
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   }
 }

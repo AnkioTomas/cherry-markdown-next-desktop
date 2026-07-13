@@ -1,11 +1,43 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "main"
-  ],
+  "description": "Cherry Markdown Next Desktop permissions",
+  "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-set-title",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:event:default",
+    "core:menu:default",
+    "core:path:default",
+    "core:app:default",
+    "allow-get-env",
+    "allow-run-command",
+    "dialog:default",
+    "store:default",
+    "shell:allow-open",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-copy-file",
+    "fs:allow-stat",
+    "fs:allow-read-dir",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "**" },
+        { "path": "**/*" }
+      ]
+    }
   ]
 }
