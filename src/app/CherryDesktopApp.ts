@@ -3,9 +3,12 @@ import {
   DEFAULT_TOOLBAR_ITEMS,
   type CherryOptions,
   type EditorOptions,
+  type ToolbarItem,
 } from "cherry-markdown-next";
 import "cherry-markdown-next/editor.css";
 import "cherry-markdown-next/transformer.css";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -14,6 +17,7 @@ import { CherryAi } from "../host/CherryAi";
 import { CherryConfig, type UploadMode } from "../host/CherryConfig";
 import { CherryUploader } from "../host/CherryUploader";
 import { DocumentSession } from "./DocumentSession";
+import { exportHtml, exportPdf } from "./exportDocument";
 import { SettingsPanel } from "./SettingsPanel";
 import "../themes.css";
 import "../styles.css";
@@ -36,6 +40,8 @@ interface CherryBoot {
 
 const SETTINGS_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" class="cherry-toolbar-icon" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.15 7.15 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 14 2h-4a.48.48 0 0 0-.48.42l-.36 2.54c-.59.24-1.13.55-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.65 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.77 14.5a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.39 1.03.7 1.62.94l.36 2.54c.05.24.24.42.48.42h4c.24 0 .44-.18.48-.42l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>`;
 
+const FILE_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" class="cherry-toolbar-icon" aria-hidden="true"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>`;
+
 export async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -51,6 +57,10 @@ function resolveAppearance(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
+}
+
+function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown)$/i.test(path);
 }
 
 export class CherryDesktopApp {
@@ -82,6 +92,8 @@ export class CherryDesktopApp {
     }
     this.bindWindowEvents();
     this.bindAppearanceWatcher();
+    this.bindShortcuts();
+    await this.bindOpenFileEvents();
     await this.session.refreshTitle();
   }
 
@@ -107,6 +119,68 @@ export class CherryDesktopApp {
       lineNumbers: this.config.getItem<boolean>("ui.lineNumbers", true),
       uploadEnabled: this.isUploadEnabled(),
       aiEnabled: this.config.getItem<boolean>("ai.enabled", false),
+    };
+  }
+
+  private buildFileToolbarItems(): ToolbarItem {
+    return {
+      id: "file",
+      type: "menu",
+      label: "文件",
+      title: "文件",
+      icon: FILE_ICON,
+      children: [
+        {
+          id: "file-open-folder",
+          label: "打开文件夹…",
+          title: "打开文件夹",
+          onClick: () => {
+            void this.handleOpenFolder();
+          },
+        },
+        {
+          id: "file-open",
+          label: "打开文件…",
+          title: "打开文件 (⌘O)",
+          onClick: () => {
+            void this.handleOpen();
+          },
+        },
+        { id: "file-sep-1", type: "separator" },
+        {
+          id: "file-save",
+          label: "保存",
+          title: "保存 (⌘S)",
+          onClick: () => {
+            void this.handleSave();
+          },
+        },
+        {
+          id: "file-save-as",
+          label: "另存为…",
+          title: "另存为 (⇧⌘S)",
+          onClick: () => {
+            void this.handleSaveAs();
+          },
+        },
+        { id: "file-sep-2", type: "separator" },
+        {
+          id: "file-export-html",
+          label: "导出 HTML…",
+          title: "导出为 HTML",
+          onClick: () => {
+            void this.handleExportHtml();
+          },
+        },
+        {
+          id: "file-export-pdf",
+          label: "导出 PDF…",
+          title: "导出为 PDF（系统打印）",
+          onClick: () => {
+            void this.handleExportPdf();
+          },
+        },
+      ],
     };
   }
 
@@ -178,6 +252,7 @@ export class CherryDesktopApp {
       sidebar: boot.sidebar,
       toolbar: {
         items: [
+          this.buildFileToolbarItems(),
           ...DEFAULT_TOOLBAR_ITEMS.filter(
             (item) => boot.aiEnabled || item.id !== "ai",
           ),
@@ -206,13 +281,14 @@ export class CherryDesktopApp {
     });
   }
 
-  private applyExternalText(text: string): void {
+  private syncFromEditor(): void {
     if (!this.editor) {
       return;
     }
-    this.applyingExternalUpdate = true;
-    this.editor.setMarkdown(text);
-    this.applyingExternalUpdate = false;
+    const markdown = this.editor.getMarkdown();
+    if (markdown !== this.session.getText()) {
+      this.session.setText(markdown, true);
+    }
   }
 
   private async setupMenu(): Promise<void> {
@@ -255,7 +331,14 @@ export class CherryDesktopApp {
               },
             },
             {
-              text: "打开…",
+              text: "打开文件夹…",
+              accelerator: "CmdOrCtrl+Shift+O",
+              action: () => {
+                void this.handleOpenFolder();
+              },
+            },
+            {
+              text: "打开文件…",
               accelerator: "CmdOrCtrl+O",
               action: () => {
                 void this.handleOpen();
@@ -265,14 +348,27 @@ export class CherryDesktopApp {
               text: "保存",
               accelerator: "CmdOrCtrl+S",
               action: () => {
-                void this.session.save();
+                void this.handleSave();
               },
             },
             {
               text: "另存为…",
               accelerator: "CmdOrCtrl+Shift+S",
               action: () => {
-                void this.session.saveAs();
+                void this.handleSaveAs();
+              },
+            },
+            { item: "Separator" },
+            {
+              text: "导出 HTML…",
+              action: () => {
+                void this.handleExportHtml();
+              },
+            },
+            {
+              text: "导出 PDF…",
+              action: () => {
+                void this.handleExportPdf();
               },
             },
           ],
@@ -296,6 +392,7 @@ export class CherryDesktopApp {
 
   private bindWindowEvents(): void {
     void getCurrentWindow().onCloseRequested(async (event) => {
+      this.syncFromEditor();
       if (!(await this.session.confirmDiscard())) {
         event.preventDefault();
       }
@@ -312,15 +409,131 @@ export class CherryDesktopApp {
     media.addEventListener("change", apply);
   }
 
+  private bindShortcuts(): void {
+    window.addEventListener("keydown", (event) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          void this.handleSaveAs();
+        } else {
+          void this.handleSave();
+        }
+        return;
+      }
+      if (key === "o") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          void this.handleOpenFolder();
+        } else {
+          void this.handleOpen();
+        }
+        return;
+      }
+      if (key === "n") {
+        event.preventDefault();
+        void this.handleNew();
+      }
+    });
+  }
+
+  private async bindOpenFileEvents(): Promise<void> {
+    await listen<string[]>("open-files", (event) => {
+      void this.openIncomingFiles(event.payload);
+    });
+
+    try {
+      const startup = await invoke<string[]>("get_startup_files");
+      await this.openIncomingFiles(startup);
+    } catch (error) {
+      console.warn("[cherry-desktop] get_startup_files failed", error);
+    }
+  }
+
+  private async openIncomingFiles(paths: string[]): Promise<void> {
+    const file = paths.find((path) => isMarkdownPath(path));
+    if (!file) {
+      return;
+    }
+    if (await this.session.openDocument(file)) {
+      this.createEditor(this.buildBoot());
+    }
+  }
+
   private async handleNew(): Promise<void> {
+    this.syncFromEditor();
     if (await this.session.newDocument()) {
       this.createEditor(this.buildBoot());
     }
   }
 
+  private async handleOpenFolder(): Promise<void> {
+    this.syncFromEditor();
+    if (await this.session.openFolder()) {
+      this.createEditor(this.buildBoot());
+    }
+  }
+
   private async handleOpen(): Promise<void> {
+    this.syncFromEditor();
     if (await this.session.openDocument()) {
       this.createEditor(this.buildBoot());
+    }
+  }
+
+  private async handleSave(): Promise<void> {
+    this.syncFromEditor();
+    try {
+      await this.session.save();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await message(`保存失败: ${msg}`, { title: "保存失败", kind: "error" });
+    }
+  }
+
+  private async handleSaveAs(): Promise<void> {
+    this.syncFromEditor();
+    try {
+      await this.session.saveAs();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await message(`另存为失败: ${msg}`, {
+        title: "另存为失败",
+        kind: "error",
+      });
+    }
+  }
+
+  private async handleExportHtml(): Promise<void> {
+    this.syncFromEditor();
+    try {
+      const ok = await exportHtml(this.session.getPath());
+      if (ok) {
+        await message("HTML 已导出", { title: "导出成功", kind: "info" });
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await message(`导出 HTML 失败: ${msg}`, {
+        title: "导出失败",
+        kind: "error",
+      });
+    }
+  }
+
+  private async handleExportPdf(): Promise<void> {
+    this.syncFromEditor();
+    try {
+      await exportPdf(this.session.getPath());
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await message(`导出 PDF 失败: ${msg}`, {
+        title: "导出失败",
+        kind: "error",
+      });
     }
   }
 }

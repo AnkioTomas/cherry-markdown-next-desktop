@@ -16,6 +16,7 @@
     "core:path:default",
     "core:app:default",
     "allow-get-env",
+    "allow-get-startup-files",
     "allow-run-command",
     "dialog:default",
     "store:default",

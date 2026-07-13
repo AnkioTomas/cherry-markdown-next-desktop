@@ -2,17 +2,17 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { basename, dirname } from "../host/path";
+import { basename, dirname, join } from "../host/path";
 
 const UNTITLED = "Untitled.md";
-const DEFAULT_MARKDOWN =
-  "# Hello Cherry Markdown Desktop\n\nWelcome to your new Markdown editor.\n";
 
 export type DocumentListener = () => void;
 
 export class DocumentSession {
   private path: string | null = null;
-  private text = DEFAULT_MARKDOWN;
+  /** 打开文件夹后的工作根目录（相对资源 / 另存默认路径） */
+  private folderRoot: string | null = null;
+  private text = "";
   private dirty = false;
   private readonly listeners = new Set<DocumentListener>();
 
@@ -26,7 +26,14 @@ export class DocumentSession {
   }
 
   getDir(): string | null {
-    return this.path ? dirname(this.path) : null;
+    if (this.path) {
+      return dirname(this.path);
+    }
+    return this.folderRoot;
+  }
+
+  getFolderRoot(): string | null {
+    return this.folderRoot;
   }
 
   getText(): string {
@@ -50,9 +57,30 @@ export class DocumentSession {
       return false;
     }
     this.path = null;
-    this.text = DEFAULT_MARKDOWN;
+    this.folderRoot = null;
+    this.text = "";
     this.dirty = false;
     this.updateBaseHref(null);
+    this.emit();
+    return true;
+  }
+
+  async openFolder(): Promise<boolean> {
+    if (!(await this.confirmDiscard())) {
+      return false;
+    }
+    const picked = await open({
+      multiple: false,
+      directory: true,
+    });
+    if (!picked || Array.isArray(picked)) {
+      return false;
+    }
+    this.folderRoot = picked;
+    this.path = null;
+    this.text = "";
+    this.dirty = false;
+    this.updateBaseHref(picked);
     this.emit();
     return true;
   }
@@ -67,6 +95,7 @@ export class DocumentSession {
       const picked = await open({
         multiple: false,
         directory: false,
+        defaultPath: this.folderRoot ?? undefined,
         filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
       });
       if (!picked || Array.isArray(picked)) {
@@ -77,6 +106,7 @@ export class DocumentSession {
 
     const content = await readTextFile(selected);
     this.path = selected;
+    this.folderRoot = dirname(selected);
     this.text = content;
     this.dirty = false;
     this.updateBaseHref(dirname(selected));
@@ -96,8 +126,10 @@ export class DocumentSession {
   }
 
   async saveAs(): Promise<boolean> {
+    const defaultPath = this.path
+      ?? (this.folderRoot ? join(this.folderRoot, UNTITLED) : UNTITLED);
     const target = await save({
-      defaultPath: this.path ?? UNTITLED,
+      defaultPath,
       filters: [{ name: "Markdown", extensions: ["md"] }],
     });
     if (!target) {
@@ -105,6 +137,7 @@ export class DocumentSession {
     }
     await writeTextFile(target, this.text);
     this.path = target;
+    this.folderRoot = dirname(target);
     this.dirty = false;
     this.updateBaseHref(dirname(target));
     this.emit();
@@ -122,7 +155,11 @@ export class DocumentSession {
   }
 
   async refreshTitle(): Promise<void> {
-    const name = this.path ? basename(this.path) : UNTITLED;
+    const name = this.path
+      ? basename(this.path)
+      : this.folderRoot
+        ? `${basename(this.folderRoot)}/`
+        : UNTITLED;
     const title = `${this.dirty ? "• " : ""}${name} — Cherry Markdown Next`;
     await getCurrentWindow().setTitle(title);
   }

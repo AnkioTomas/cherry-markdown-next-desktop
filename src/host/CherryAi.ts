@@ -40,8 +40,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderPreset> = {
   },
 };
 
-export class CherryAi {
-  private static readonly OUTPUT_RULES = `
+export const AI_OUTPUT_RULES = `
 输出规则（必须遵守）：
 1. 只输出处理后的 Markdown 正文，不要开场白、不要总结、不要「如下所示」之类说明。
 2. 不要用 \`\`\`markdown 包裹整个结果；原文里已有的代码块照常保留。
@@ -50,8 +49,8 @@ export class CherryAi {
 5. 若原文为空或无需改动，仍返回合理结果（摘要类可给出简短说明；其余尽量保持可替换文本）。
 `.trim();
 
-  private static readonly ACTION_PROMPTS: Record<string, string> = {
-    polish: `
+export const AI_ACTION_PROMPTS: Record<string, string> = {
+  polish: `
 你是资深中文技术写作者与 Markdown 编辑。任务：润色用户给出的 Markdown 片段。
 
 目标：
@@ -60,10 +59,10 @@ export class CherryAi {
 - 对英文专有名词、API、命令、路径保持原样。
 - 不要扩写成长文，不要添加原文没有的观点或章节。
 
-${CherryAi.OUTPUT_RULES}
+${AI_OUTPUT_RULES}
 `.trim(),
 
-    proofread: `
+  proofread: `
 你是严谨的中文校对编辑。任务：校对用户给出的 Markdown 片段。
 
 只做纠错，不做风格重写：
@@ -73,10 +72,10 @@ ${CherryAi.OUTPUT_RULES}
 - 专有名词大小写、常见技术名拼写（在有把握时修正）。
 - 不要为了「更好看」改写句式；原意与结构尽量不动。
 
-${CherryAi.OUTPUT_RULES}
+${AI_OUTPUT_RULES}
 `.trim(),
 
-    translate: `
+  translate: `
 你是专业中英双语译者，熟悉技术文档与 Markdown。任务：翻译用户给出的 Markdown 片段。
 
 方向判定：
@@ -89,10 +88,10 @@ ${CherryAi.OUTPUT_RULES}
 - 保持 Markdown 标记与结构位置对应（标题、列表、表格列等）。
 - 链接文字可译，URL 本身不译；图片 alt 可译。
 
-${CherryAi.OUTPUT_RULES}
+${AI_OUTPUT_RULES}
 `.trim(),
 
-    summarize: `
+  summarize: `
 你是信息提炼助手。任务：为用户给出的 Markdown 片段生成摘要。
 
 要求：
@@ -102,28 +101,29 @@ ${CherryAi.OUTPUT_RULES}
 - 不要引入原文没有的信息；不确定处不要臆造。
 - 摘要本身使用合法 Markdown（可用列表/加粗），但不要复制原文全部内容。
 
-${CherryAi.OUTPUT_RULES}
+${AI_OUTPUT_RULES}
 `.trim(),
 
-    custom: `
+  custom: `
 你是可控的 Markdown 文本改写引擎。用户会给出「指令」与「文本」。
 严格按指令处理文本；指令未要求的内容不要擅自发挥。
 
 若指令与「保留 Markdown 结构」冲突，优先满足指令，但仍避免破坏代码块与 URL。
 若指令含糊，做最小必要改动并保持可直接替换。
 
-${CherryAi.OUTPUT_RULES}
+${AI_OUTPUT_RULES}
 `.trim(),
-  };
+};
 
-  private static readonly ACTION_TEMPERATURE: Record<string, number> = {
-    polish: 0.4,
-    proofread: 0.1,
-    translate: 0.2,
-    summarize: 0.3,
-    custom: 0.4,
-  };
+export const AI_ACTION_TEMPERATURE: Record<string, number> = {
+  polish: 0.4,
+  proofread: 0.1,
+  translate: 0.2,
+  summarize: 0.3,
+  custom: 0.4,
+};
 
+export class CherryAi {
   constructor(private readonly config: CherryConfig) {}
 
   public async request(
@@ -233,8 +233,8 @@ ${CherryAi.OUTPUT_RULES}
       return override;
     }
     return (
-      CherryAi.ACTION_PROMPTS[action] ||
-      `你是 Markdown 写作助手。按要求处理文本。\n\n${CherryAi.OUTPUT_RULES}`
+      AI_ACTION_PROMPTS[action] ||
+      `你是 Markdown 写作助手。按要求处理文本。\n\n${AI_OUTPUT_RULES}`
     );
   }
 
@@ -243,7 +243,7 @@ ${CherryAi.OUTPUT_RULES}
     if (configured >= 0) {
       return configured;
     }
-    return CherryAi.ACTION_TEMPERATURE[action] ?? 0.3;
+    return AI_ACTION_TEMPERATURE[action] ?? 0.3;
   }
 
   private buildUserMessage(

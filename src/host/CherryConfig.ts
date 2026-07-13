@@ -19,7 +19,7 @@ export type AiProvider =
 
 export type ConfigListener = () => void;
 
-const DEFAULTS: Record<string, unknown> = {
+export const CONFIG_DEFAULTS: Record<string, unknown> = {
   "ui.layout": "split",
   "ui.theme": "default",
   "ui.statusbar": true,
@@ -46,6 +46,8 @@ const DEFAULTS: Record<string, unknown> = {
   "ai.prompt.summarize": "",
   "ai.prompt.custom": "",
 };
+
+const DEFAULTS = CONFIG_DEFAULTS;
 
 export class CherryConfig {
   private readonly store = new LazyStore("cherry-config.json");

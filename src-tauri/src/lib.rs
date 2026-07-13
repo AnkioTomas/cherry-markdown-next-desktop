@@ -1,7 +1,9 @@
 use serde::Serialize;
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use tauri::{Emitter, Manager};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +16,25 @@ struct CommandResult {
 #[tauri::command]
 fn get_env(name: String) -> Option<String> {
   std::env::var(name).ok()
+}
+
+#[tauri::command]
+fn get_startup_files() -> Vec<String> {
+  std::env::args()
+    .skip(1)
+    .filter(|arg| !arg.starts_with('-'))
+    .filter(|arg| {
+      let path = Path::new(arg);
+      path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+          let lower = ext.to_ascii_lowercase();
+          lower == "md" || lower == "markdown"
+        })
+        .unwrap_or(false)
+    })
+    .collect()
 }
 
 #[tauri::command]
@@ -108,7 +129,26 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_env, run_command])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .invoke_handler(tauri::generate_handler![
+      get_env,
+      get_startup_files,
+      run_command
+    ])
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application")
+    .run(|app, event| {
+      if let tauri::RunEvent::Opened { urls } = event {
+        let paths: Vec<String> = urls
+          .into_iter()
+          .filter_map(|url| url.to_file_path().ok())
+          .map(|path| path.to_string_lossy().into_owned())
+          .collect();
+        if paths.is_empty() {
+          return;
+        }
+        if let Some(window) = app.get_webview_window("main") {
+          let _ = window.emit("open-files", paths);
+        }
+      }
+    });
 }

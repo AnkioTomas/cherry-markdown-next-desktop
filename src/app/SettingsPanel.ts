@@ -1,17 +1,25 @@
 import type { AiProvider, CherryConfig, UploadMode } from "../host/CherryConfig";
-import { AI_PROVIDERS } from "../host/CherryAi";
+import {
+  AI_ACTION_PROMPTS,
+  AI_ACTION_TEMPERATURE,
+  AI_PROVIDERS,
+} from "../host/CherryAi";
 
 type Field =
   | {
       key: string;
       label: string;
       type: "text" | "number" | "checkbox" | "textarea";
+      /** 留空表示使用该内置值；展示为 placeholder / 回填 */
+      emptyMeans?: string;
+      hint?: string;
     }
   | {
       key: string;
       label: string;
       type: "select";
       options: Array<{ value: string; label: string }>;
+      hint?: string;
     };
 
 const UI_FIELDS: Field[] = [
@@ -58,9 +66,24 @@ const UPLOAD_FIELDS: Field[] = [
     ],
   },
   { key: "upload.directory", label: "本地目录", type: "text" },
-  { key: "upload.script", label: "脚本路径", type: "text" },
-  { key: "upload.picgoPath", label: "PicGo 路径", type: "text" },
-  { key: "upload.upicPath", label: "uPic 路径", type: "text" },
+  {
+    key: "upload.script",
+    label: "脚本路径",
+    type: "text",
+    emptyMeans: "未配置（script 模式必填）",
+  },
+  {
+    key: "upload.picgoPath",
+    label: "PicGo 路径",
+    type: "text",
+    emptyMeans: "/Applications/PicGo.app/Contents/MacOS/PicGo 或 PATH 中的 picgo",
+  },
+  {
+    key: "upload.upicPath",
+    label: "uPic 路径",
+    type: "text",
+    emptyMeans: "/Applications/uPic.app/Contents/MacOS/uPic",
+  },
   { key: "upload.timeoutMs", label: "超时(ms)", type: "number" },
 ];
 
@@ -75,20 +98,72 @@ const AI_FIELDS: Field[] = [
       label: AI_PROVIDERS[value].label,
     })),
   },
-  { key: "ai.endpoint", label: "Endpoint", type: "text" },
+  {
+    key: "ai.endpoint",
+    label: "Endpoint",
+    type: "text",
+    emptyMeans: "", // 运行时按供应商填充
+    hint: "留空使用供应商预设",
+  },
   { key: "ai.apiKey", label: "API Key", type: "text" },
-  { key: "ai.apiKeyEnv", label: "API Key 环境变量", type: "text" },
-  { key: "ai.model", label: "模型", type: "text" },
-  { key: "ai.temperature", label: "温度(-1默认)", type: "number" },
+  {
+    key: "ai.apiKeyEnv",
+    label: "API Key 环境变量",
+    type: "text",
+    emptyMeans: "例如 OPENAI_API_KEY",
+  },
+  {
+    key: "ai.model",
+    label: "模型",
+    type: "text",
+    emptyMeans: "",
+    hint: "留空使用供应商默认模型",
+  },
+  {
+    key: "ai.temperature",
+    label: "温度",
+    type: "number",
+    hint: `-1 表示按动作内置（润色 ${AI_ACTION_TEMPERATURE.polish} / 校对 ${AI_ACTION_TEMPERATURE.proofread} / 翻译 ${AI_ACTION_TEMPERATURE.translate} / 摘要 ${AI_ACTION_TEMPERATURE.summarize}）`,
+  },
   { key: "ai.timeoutMs", label: "超时(ms)", type: "number" },
-  { key: "ai.prompt.polish", label: "润色提示词", type: "textarea" },
-  { key: "ai.prompt.proofread", label: "校对提示词", type: "textarea" },
-  { key: "ai.prompt.translate", label: "翻译提示词", type: "textarea" },
-  { key: "ai.prompt.summarize", label: "摘要提示词", type: "textarea" },
-  { key: "ai.prompt.custom", label: "自定义提示词", type: "textarea" },
+  {
+    key: "ai.prompt.polish",
+    label: "润色提示词",
+    type: "textarea",
+    emptyMeans: AI_ACTION_PROMPTS.polish,
+    hint: "留空使用内置提示词；保存时若与内置一致仍记为空",
+  },
+  {
+    key: "ai.prompt.proofread",
+    label: "校对提示词",
+    type: "textarea",
+    emptyMeans: AI_ACTION_PROMPTS.proofread,
+    hint: "留空使用内置提示词",
+  },
+  {
+    key: "ai.prompt.translate",
+    label: "翻译提示词",
+    type: "textarea",
+    emptyMeans: AI_ACTION_PROMPTS.translate,
+    hint: "留空使用内置提示词",
+  },
+  {
+    key: "ai.prompt.summarize",
+    label: "摘要提示词",
+    type: "textarea",
+    emptyMeans: AI_ACTION_PROMPTS.summarize,
+    hint: "留空使用内置提示词",
+  },
+  {
+    key: "ai.prompt.custom",
+    label: "自定义提示词",
+    type: "textarea",
+    emptyMeans: AI_ACTION_PROMPTS.custom,
+    hint: "留空使用内置提示词",
+  },
 ];
 
-function fieldValue(config: CherryConfig, field: Field): string | boolean {
+function storedValue(config: CherryConfig, field: Field): string | boolean {
   if (field.type === "checkbox") {
     return config.getItem<boolean>(field.key, false);
   }
@@ -98,27 +173,79 @@ function fieldValue(config: CherryConfig, field: Field): string | boolean {
   return String(config.getItem<string>(field.key, ""));
 }
 
+function providerPreset(config: CherryConfig): {
+  endpoint: string;
+  defaultModel: string;
+} {
+  const provider = config.getItem<AiProvider>("ai.provider", "openai");
+  return AI_PROVIDERS[provider] ?? AI_PROVIDERS.custom;
+}
+
+function resolveEmptyMeans(
+  field: Field,
+  config: CherryConfig,
+): string | undefined {
+  if (field.type === "select" || field.type === "checkbox") {
+    return undefined;
+  }
+  if (field.key === "ai.endpoint") {
+    return providerPreset(config).endpoint || "自定义供应商需手动填写";
+  }
+  if (field.key === "ai.model") {
+    return providerPreset(config).defaultModel || "自定义供应商需手动填写";
+  }
+  return field.emptyMeans;
+}
+
 function renderFields(fields: Field[], config: CherryConfig): string {
   return fields
     .map((field) => {
-      const value = fieldValue(config, field);
+      const stored = storedValue(config, field);
       const id = `cfg-${field.key}`;
+      const hint = field.hint
+        ? `<span class="cherry-dialog-table-hint">${escapeHtml(field.hint)}</span>`
+        : "";
+
       if (field.type === "checkbox") {
-        return `<label class="cherry-dialog-field cherry-dialog-field--check" for="${id}"><input id="${id}" data-key="${field.key}" type="checkbox" ${value ? "checked" : ""} /><span>${escapeHtml(field.label)}</span></label>`;
+        return `<label class="cherry-dialog-field cherry-dialog-field--check" for="${id}"><input id="${id}" data-key="${field.key}" type="checkbox" ${stored ? "checked" : ""} /><span>${escapeHtml(field.label)}</span></label>`;
       }
+
       if (field.type === "select") {
         const options = field.options
           .map(
             (opt) =>
-              `<option value="${opt.value}" ${opt.value === value ? "selected" : ""}>${escapeHtml(opt.label)}</option>`,
+              `<option value="${opt.value}" ${opt.value === stored ? "selected" : ""}>${escapeHtml(opt.label)}</option>`,
           )
           .join("");
-        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" data-key="${field.key}">${options}</select></label>`;
+        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" data-key="${field.key}">${options}</select>${hint}</label>`;
       }
+
+      const emptyMeans = resolveEmptyMeans(field, config) ?? "";
+      const isEmptyOverride =
+        typeof stored === "string" &&
+        stored.trim() === "" &&
+        Boolean(emptyMeans);
+
+      // 长文本：空配置时直接回填内置内容便于阅读；保存时若未改回写空串
       if (field.type === "textarea") {
-        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" data-key="${field.key}" rows="4">${escapeHtml(String(value))}</textarea></label>`;
+        const display = isEmptyOverride ? emptyMeans : String(stored);
+        const builtinAttr = isEmptyOverride
+          ? ` data-builtin="${escapeHtml(emptyMeans)}"`
+          : emptyMeans
+            ? ` data-builtin="${escapeHtml(emptyMeans)}"`
+            : "";
+        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" data-key="${field.key}" rows="6"${builtinAttr} placeholder="${escapeHtml(emptyMeans)}">${escapeHtml(display)}</textarea>${hint}</label>`;
       }
-      return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" data-key="${field.key}" type="${field.type}" value="${escapeHtml(String(value))}" /></label>`;
+
+      // 短文本 / 数字：用 placeholder 展示内置默认，不污染已存值
+      const placeholder = emptyMeans
+        ? ` placeholder="${escapeHtml(emptyMeans)}"`
+        : "";
+      const providerBound =
+        field.key === "ai.endpoint" || field.key === "ai.model"
+          ? ` data-provider-bound="${field.key === "ai.endpoint" ? "endpoint" : "model"}"`
+          : "";
+      return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" data-key="${field.key}" type="${field.type}" value="${escapeHtml(String(stored))}"${placeholder}${providerBound} />${hint}</label>`;
     })
     .join("");
 }
@@ -152,13 +279,47 @@ function readValues(root: HTMLElement): Record<string, unknown> {
       values[key] = Number(el.value);
       continue;
     }
-    values[key] = el.value;
+
+    let value = el.value;
+    const builtin = el.dataset.builtin;
+    // 与内置完全一致 → 存空，继续走「留空用默认」
+    if (builtin !== undefined && value.trim() === builtin.trim()) {
+      value = "";
+    }
+    values[key] = value;
   }
 
   if (typeof values["upload.mode"] === "string") {
     values["upload.mode"] = values["upload.mode"] as UploadMode;
   }
   return values;
+}
+
+function bindProviderPlaceholders(root: HTMLElement): void {
+  const providerSelect = root.querySelector<HTMLSelectElement>(
+    '[data-key="ai.provider"]',
+  );
+  const endpointInput = root.querySelector<HTMLInputElement>(
+    '[data-provider-bound="endpoint"]',
+  );
+  const modelInput = root.querySelector<HTMLInputElement>(
+    '[data-provider-bound="model"]',
+  );
+  if (!providerSelect || !endpointInput || !modelInput) {
+    return;
+  }
+
+  const sync = () => {
+    const preset =
+      AI_PROVIDERS[providerSelect.value as AiProvider] ?? AI_PROVIDERS.custom;
+    endpointInput.placeholder =
+      preset.endpoint || "自定义供应商需手动填写";
+    modelInput.placeholder =
+      preset.defaultModel || "自定义供应商需手动填写";
+  };
+
+  providerSelect.addEventListener("change", sync);
+  sync();
 }
 
 export class SettingsPanel {
@@ -227,6 +388,7 @@ export class SettingsPanel {
       void this.save(host);
     });
 
+    bindProviderPlaceholders(host);
     mount.appendChild(host);
     this.host = host;
     document.addEventListener("keydown", this.onKeyDown);
