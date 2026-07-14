@@ -151,8 +151,9 @@ pub fn run() {
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
-    .run(|app, event| {
-      if let tauri::RunEvent::Opened { urls } = event {
+    .run(|app, _event| {
+      #[cfg(target_os = "macos")]
+      if let tauri::RunEvent::Opened { urls } = _event {
         let paths: Vec<String> = urls
           .into_iter()
           .filter_map(|url| url.to_file_path().ok())
