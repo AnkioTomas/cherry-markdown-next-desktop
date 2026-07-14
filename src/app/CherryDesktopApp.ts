@@ -72,7 +72,6 @@ export class CherryDesktopApp {
 
   async start(): Promise<void> {
     await this.config.load();
-    this.createEditor(this.buildBoot());
     try {
       await this.setupMenu();
     } catch (error) {
@@ -80,7 +79,15 @@ export class CherryDesktopApp {
     }
     this.bindWindowEvents();
     this.bindAppearanceWatcher();
+    
+    // 先处理启动参数和拖拽事件加载文件
     await this.bindOpenFileEvents();
+    
+    // 如果没有通过启动参数创建出编辑器，则用空文档兜底创建
+    if (!this.editor) {
+      this.createEditor(this.buildBoot());
+    }
+    
     await this.session.refreshTitle();
   }
 
