@@ -1,16 +1,51 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { readDir, readTextFile, stat, writeTextFile } from "@tauri-apps/plugin-fs";
+import type { CherryFileItem } from "cherry-markdown-next";
 import { basename, dirname, join } from "../host/path";
 
 const UNTITLED = "Untitled.md";
 
 export type DocumentListener = () => void;
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function isInsideRoot(root: string, filePath: string): boolean {
+  const r = normalizePath(root);
+  const f = normalizePath(filePath);
+  return f === r || f.startsWith(`${r}/`);
+}
+
+function isMarkdownName(name: string): boolean {
+  return /\.(md|markdown)$/i.test(name);
+}
+
+function relativeToRoot(root: string, filePath: string): string {
+  const r = normalizePath(root);
+  const f = normalizePath(filePath);
+  if (f.startsWith(`${r}/`)) {
+    return f.slice(r.length + 1);
+  }
+  return basename(filePath);
+}
+
+function firstSummaryLine(text: string): string {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    return trimmed.replace(/^#+\s*/, "").slice(0, 80);
+  }
+  return "";
+}
+
 export class DocumentSession {
   private path: string | null = null;
-  /** 打开文件夹后的工作根目录（相对资源 / 另存默认路径） */
+  /** 打开文件夹后的工作根目录（侧栏文件列表 / 相对资源 / 另存默认路径） */
   private folderRoot: string | null = null;
   private text = "";
   private dirty = false;
@@ -85,6 +120,40 @@ export class DocumentSession {
     return true;
   }
 
+  /** 供编辑器侧栏 `fetchFiles`：递归列出工作区内的 Markdown 文件。 */
+  async listWorkspaceFiles(): Promise<CherryFileItem[]> {
+    const root = this.folderRoot;
+    if (!root) {
+      return [];
+    }
+
+    const paths: string[] = [];
+    await this.collectMarkdownFiles(root, paths);
+    paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+    const items: CherryFileItem[] = [];
+    for (const filePath of paths) {
+      let updateTime = "";
+      let summary = "";
+      try {
+        const info = await stat(filePath);
+        if (info.mtime) {
+          updateTime = info.mtime.toLocaleString();
+        }
+        summary = firstSummaryLine(await readTextFile(filePath));
+      } catch (error) {
+        console.warn("[cherry-desktop] skip file meta", filePath, error);
+      }
+      items.push({
+        id: filePath,
+        title: relativeToRoot(root, filePath),
+        updateTime,
+        summary,
+      });
+    }
+    return items;
+  }
+
   async openDocument(filePath?: string): Promise<boolean> {
     if (!(await this.confirmDiscard())) {
       return false;
@@ -106,10 +175,13 @@ export class DocumentSession {
 
     const content = await readTextFile(selected);
     this.path = selected;
-    this.folderRoot = dirname(selected);
+    // 已有工作区且文件在其内：保留 folderRoot，别被 dirname 冲掉
+    if (!this.folderRoot || !isInsideRoot(this.folderRoot, selected)) {
+      this.folderRoot = dirname(selected);
+    }
     this.text = content;
     this.dirty = false;
-    this.updateBaseHref(dirname(selected));
+    this.updateBaseHref(this.folderRoot);
     this.emit();
     return true;
   }
@@ -120,7 +192,7 @@ export class DocumentSession {
     }
     await writeTextFile(this.path, this.text);
     this.dirty = false;
-    this.updateBaseHref(dirname(this.path));
+    this.updateBaseHref(this.folderRoot ?? dirname(this.path));
     this.emit();
     return true;
   }
@@ -137,9 +209,11 @@ export class DocumentSession {
     }
     await writeTextFile(target, this.text);
     this.path = target;
-    this.folderRoot = dirname(target);
+    if (!this.folderRoot || !isInsideRoot(this.folderRoot, target)) {
+      this.folderRoot = dirname(target);
+    }
     this.dirty = false;
-    this.updateBaseHref(dirname(target));
+    this.updateBaseHref(this.folderRoot);
     this.emit();
     return true;
   }
@@ -176,6 +250,26 @@ export class DocumentSession {
     }
     const href = convertFileSrc(docDir).replace(/\/?$/, "/");
     base.setAttribute("href", href);
+  }
+
+  private async collectMarkdownFiles(
+    dir: string,
+    out: string[],
+  ): Promise<void> {
+    const entries = await readDir(dir);
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules" ) {
+        continue;
+      }
+      const full = join(dir, entry.name);
+      if (entry.isDirectory) {
+        await this.collectMarkdownFiles(full, out);
+        continue;
+      }
+      if (entry.isFile && isMarkdownName(entry.name)) {
+        out.push(full);
+      }
+    }
   }
 
   private emit(): void {
