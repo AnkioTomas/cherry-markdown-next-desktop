@@ -123,13 +123,32 @@ export const AI_ACTION_TEMPERATURE: Record<string, number> = {
   custom: 0.4,
 };
 
+type AiOnUpdate = (content: string, thinking?: string) => void;
+
+interface ChatCompletionDelta {
+  content?: string | null;
+  reasoning_content?: string | null;
+  reasoning?: string | null;
+}
+
+interface ChatCompletionChunk {
+  choices?: Array<{ delta?: ChatCompletionDelta }>;
+  error?: { message?: string };
+}
+
 export class CherryAi {
   constructor(private readonly config: CherryConfig) {}
 
+  /**
+   * 适配编辑器 `OnAiRequest`：
+   * `(action, text, prompts?, onUpdate?) => Promise<string>`
+   * 有 `onUpdate` 时走 SSE 流式，边收边推 content / thinking。
+   */
   public async request(
     action: string,
     text: string,
     prompts?: string,
+    onUpdate?: AiOnUpdate,
   ): Promise<string> {
     if (!this.config.getItem<boolean>("ai.enabled", false)) {
       throw new Error("AI 未启用");
@@ -140,11 +159,6 @@ export class CherryAi {
     const system = this.resolveSystemPrompt(action);
     const userContent = this.buildUserMessage(action, text, prompts);
     const temperature = this.resolveTemperature(action);
-    const timeoutMs = Math.max(
-      1000,
-      this.config.getItem<number>("ai.timeoutMs", 120_000),
-    );
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...this.config.getItem<Record<string, string>>("ai.headers", {}),
@@ -163,8 +177,8 @@ export class CherryAi {
           { role: "user", content: userContent },
         ],
         temperature,
+        stream: Boolean(onUpdate),
       }),
-      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -172,6 +186,10 @@ export class CherryAi {
       throw new Error(
         `AI 请求失败 HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
       );
+    }
+
+    if (onUpdate) {
+      return this.consumeStream(response, onUpdate);
     }
 
     const data = (await response.json()) as {
@@ -188,6 +206,79 @@ export class CherryAi {
       throw new Error("AI 响应缺少内容");
     }
     return this.stripModelFences(content);
+  }
+
+  private async consumeStream(
+    response: Response,
+    onUpdate: AiOnUpdate,
+  ): Promise<string> {
+    if (!response.body) {
+      throw new Error("AI 流式响应缺少 body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let thinking = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) {
+          continue;
+        }
+        const data = trimmed.slice(5).trim();
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+
+        let chunk: ChatCompletionChunk;
+        try {
+          chunk = JSON.parse(data) as ChatCompletionChunk;
+        } catch {
+          continue;
+        }
+
+        if (chunk.error?.message) {
+          throw new Error(`AI 响应错误: ${chunk.error.message}`);
+        }
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) {
+          continue;
+        }
+
+        if (typeof delta.content === "string" && delta.content) {
+          content += delta.content;
+        }
+
+        const thinkPiece =
+          (typeof delta.reasoning_content === "string" &&
+            delta.reasoning_content) ||
+          (typeof delta.reasoning === "string" && delta.reasoning) ||
+          "";
+        if (thinkPiece) {
+          thinking += thinkPiece;
+        }
+
+        onUpdate(content, thinking || undefined);
+      }
+    }
+
+    const final = this.stripModelFences(content);
+    if (!final) {
+      throw new Error("AI 响应缺少内容");
+    }
+    return final;
   }
 
   private resolveEndpointAndModel(): { endpoint: string; model: string } {

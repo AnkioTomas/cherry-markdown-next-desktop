@@ -145,12 +145,18 @@ export class CherryDesktopApp {
     }
 
     if (boot.aiEnabled) {
-      editorOptions.onAiRequest = async (action, selected, prompts) => {
+      editorOptions.onAiRequest = async (
+        action,
+        selected,
+        prompts,
+        onUpdate,
+      ) => {
         try {
           return await new CherryAi(this.config).request(
             action,
             selected,
             prompts,
+            onUpdate,
           );
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -250,7 +256,8 @@ export class CherryDesktopApp {
       heading3: "CmdOrCtrl+3",
       blockquote: "CmdOrCtrl+Shift+Q",
       unorderedList: "CmdOrCtrl+Shift+U",
-      orderedList: "CmdOrCtrl+Shift+O",
+      // 不要用 Shift+O：和「打开文件夹」冲突
+      orderedList: "CmdOrCtrl+Shift+7",
       taskList: "CmdOrCtrl+Shift+C",
       link: "CmdOrCtrl+K",
       image: "CmdOrCtrl+Shift+I",
@@ -370,6 +377,29 @@ export class CherryDesktopApp {
                 void this.handleExportPdf();
               },
             },
+          ],
+        },
+        {
+          // macOS：撤销/复制粘贴等由系统菜单项路由，缺了 WebView 里快捷键直接失效
+          text: "编辑",
+          items: [
+            { item: "Undo" },
+            { item: "Redo" },
+            { item: "Separator" },
+            { item: "Cut" },
+            { item: "Copy" },
+            { item: "Paste" },
+            { item: "SelectAll" },
+          ],
+        },
+        {
+          text: "窗口",
+          items: [
+            { item: "Minimize" },
+            { item: "Maximize" },
+            { item: "Fullscreen" },
+            { item: "Separator" },
+            { item: "CloseWindow" },
           ],
         },
         ...dynamicItems,
