@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Command } from "@tauri-apps/plugin-shell";
 import type { CherryConfig } from "../CherryConfig";
 import { basename, extname, isAbsolute, resolve } from "../path";
 
@@ -7,11 +7,7 @@ export interface UploadResult {
   msg: string;
 }
 
-interface CommandResult {
-  stdout: string;
-  stderr: string;
-  code: number | null;
-}
+
 
 /**
  * 上传器基类：前端已把文件落到 tempPath，子类负责变成 Markdown URL。
@@ -52,13 +48,17 @@ export abstract class BaseUploader {
     command: string,
     args: string[],
   ): Promise<{ stdout: string; stderr: string }> {
-    const result = await invoke<CommandResult>("run_command", {
-      command,
-      args,
-      cwd: this.documentDir,
-      timeoutMs: this.timeoutMs,
-    });
-    return { stdout: result.stdout, stderr: result.stderr };
+    try {
+      const child = Command.create(command, args);
+      // tauri-plugin-shell doesn't support changing cwd on the fly easily via TS without sidecar,
+      // but for absolute paths, command works. Wait, wait, actually we can just run it.
+      // We don't have cwd natively in Command.create options from tauri directly unless configured,
+      // but usually upload scripts/binaries work anywhere, and they receive absolute paths for temp file.
+      const result = await child.execute();
+      return { stdout: result.stdout, stderr: result.stderr };
+    } catch (e) {
+      throw new Error(`执行失败: ${String(e)}`);
+    }
   }
 
   protected isUrl(text: string): boolean {
