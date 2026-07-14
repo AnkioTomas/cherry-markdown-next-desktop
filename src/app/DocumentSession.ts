@@ -100,16 +100,20 @@ export class DocumentSession {
     return true;
   }
 
-  async openFolder(): Promise<boolean> {
+  async openFolder(folderPath?: string): Promise<boolean> {
     if (!(await this.confirmDiscard())) {
       return false;
     }
-    const picked = await open({
-      multiple: false,
-      directory: true,
-    });
-    if (!picked || Array.isArray(picked)) {
-      return false;
+    let picked = folderPath;
+    if (!picked) {
+      const selected = await open({
+        multiple: false,
+        directory: true,
+      });
+      if (!selected || Array.isArray(selected)) {
+        return false;
+      }
+      picked = selected;
     }
     this.folderRoot = picked;
     this.path = null;

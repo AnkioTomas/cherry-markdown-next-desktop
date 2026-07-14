@@ -14,6 +14,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Menu } from "@tauri-apps/api/menu";
+import { stat } from "@tauri-apps/plugin-fs";
 import { CherryAi } from "../host/CherryAi";
 import { CherryConfig, type UploadMode } from "../host/CherryConfig";
 import { CherryUploader } from "../host/CherryUploader";
@@ -417,6 +418,30 @@ export class CherryDesktopApp {
       this.syncFromEditor();
       if (!(await this.session.confirmDiscard())) {
         event.preventDefault();
+      }
+    });
+
+    void getCurrentWindow().onDragDropEvent(async (event) => {
+      if (event.payload.type === "drop") {
+        const paths = event.payload.paths;
+        if (paths && paths.length > 0) {
+          const path = paths[0]; // 只处理第一个拖拽的文件或文件夹
+          try {
+            const info = await stat(path);
+            this.syncFromEditor();
+            if (info.isDirectory) {
+              if (await this.session.openFolder(path)) {
+                this.createEditor(this.buildBoot());
+              }
+            } else if (info.isFile && isMarkdownPath(path)) {
+              if (await this.session.openDocument(path)) {
+                this.updateEditorContent();
+              }
+            }
+          } catch (error) {
+            console.error("[cherry-desktop] drag drop handle failed", error);
+          }
+        }
       }
     });
   }
