@@ -179,13 +179,9 @@ export class DocumentSession {
 
     const content = await readTextFile(selected);
     this.path = selected;
-    // 已有工作区且文件在其内：保留 folderRoot，别被 dirname 冲掉
-    if (!this.folderRoot || !isInsideRoot(this.folderRoot, selected)) {
-      this.folderRoot = dirname(selected);
-    }
-    this.text = content;
+    this.text = content.replace(/\r\n/g, "\n");
     this.dirty = false;
-    this.updateBaseHref(this.folderRoot);
+    this.updateBaseHref(this.folderRoot ?? dirname(this.path));
     this.emit();
     return true;
   }
@@ -213,11 +209,8 @@ export class DocumentSession {
     }
     await writeTextFile(target, this.text);
     this.path = target;
-    if (!this.folderRoot || !isInsideRoot(this.folderRoot, target)) {
-      this.folderRoot = dirname(target);
-    }
     this.dirty = false;
-    this.updateBaseHref(this.folderRoot);
+    this.updateBaseHref(this.folderRoot ?? dirname(this.path));
     this.emit();
     return true;
   }
