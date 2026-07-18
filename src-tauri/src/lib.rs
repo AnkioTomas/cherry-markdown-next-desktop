@@ -2,8 +2,12 @@ use serde::Serialize;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
+
+/// macOS 冷启动时 `RunEvent::Opened` 早于窗口/前端；先缓存，等前端来取。
+struct PendingOpenFiles(Mutex<Vec<String>>);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,23 +17,32 @@ struct CommandResult {
   code: Option<i32>,
 }
 
-#[tauri::command]
-fn get_startup_files() -> Vec<String> {
+fn is_markdown_path(path: &Path) -> bool {
+  path
+    .extension()
+    .and_then(|ext| ext.to_str())
+    .map(|ext| {
+      let lower = ext.to_ascii_lowercase();
+      lower == "md" || lower == "markdown"
+    })
+    .unwrap_or(false)
+}
+
+fn markdown_argv() -> Vec<String> {
   std::env::args()
     .skip(1)
     .filter(|arg| !arg.starts_with('-'))
-    .filter(|arg| {
-      let path = Path::new(arg);
-      path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| {
-          let lower = ext.to_ascii_lowercase();
-          lower == "md" || lower == "markdown"
-        })
-        .unwrap_or(false)
-    })
+    .filter(|arg| is_markdown_path(Path::new(arg)))
     .collect()
+}
+
+#[tauri::command]
+fn get_startup_files(app: AppHandle) -> Vec<String> {
+  let mut files = markdown_argv();
+  if let Ok(mut pending) = app.state::<PendingOpenFiles>().0.lock() {
+    files.append(&mut *pending);
+  }
+  files
 }
 
 #[tauri::command]
@@ -130,6 +143,7 @@ fn run_command_blocking(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(PendingOpenFiles(Mutex::new(Vec::new())))
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_store::Builder::new().build())
@@ -151,17 +165,23 @@ pub fn run() {
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
-    .run(|app, _event| {
-      #[cfg(target_os = "macos")]
-      if let tauri::RunEvent::Opened { urls } = _event {
+    .run(|app, event| {
+      #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+      if let tauri::RunEvent::Opened { urls } = &event {
         let paths: Vec<String> = urls
-          .into_iter()
+          .iter()
           .filter_map(|url| url.to_file_path().ok())
+          .filter(|path| is_markdown_path(path))
           .map(|path| path.to_string_lossy().into_owned())
           .collect();
         if paths.is_empty() {
           return;
         }
+        // 冷启动：窗口/前端可能还不在，必须先入队。
+        if let Ok(mut pending) = app.state::<PendingOpenFiles>().0.lock() {
+          pending.extend(paths.iter().cloned());
+        }
+        // 热启动：窗口已在则立刻推给前端。
         if let Some(window) = app.get_webview_window("main") {
           let _ = window.emit("open-files", paths);
         }
