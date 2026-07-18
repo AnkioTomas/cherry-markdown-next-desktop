@@ -3,41 +3,52 @@ import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import { basename } from "../host/path";
 
-function collectInlineStyles(): string {
-  return Array.from(document.querySelectorAll("style"))
-    .map((el) => el.textContent ?? "")
-    .filter(Boolean)
-    .join("\n");
+/**
+ * 收集页面全部可用 CSS。
+ * 主题样式由 Vite 打成 `<link rel="stylesheet">`，只扫 `<style>` 会丢主题。
+ */
+function collectDocumentStyles(): string {
+  const chunks: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      const rules = sheet.cssRules;
+      if (!rules?.length) {
+        continue;
+      }
+      chunks.push(Array.from(rules, (rule) => rule.cssText).join("\n"));
+    } catch {
+      // 跨域 stylesheet 读不到 cssRules，跳过
+    }
+  }
+  return chunks.join("\n");
 }
 
-function getPreviewHtml(): HTMLElement {
-  const rootElement = document.querySelector<HTMLElement>("#penna-root");
-  if (!rootElement) {
+/**
+ * 导出只需要：主题 class 壳 + 预览内容层。
+ * 不要整棵 `#penna-root`（会带上编辑器布局的 height/overflow 污染）。
+ */
+function getExportRoot(): HTMLElement {
+  const appRoot = document.querySelector<HTMLElement>("#penna-root");
+  if (!appRoot) {
     throw new Error("无法找到编辑器根节点");
   }
 
-  const clone = rootElement.cloneNode(true) as HTMLElement;
+  const render =
+    appRoot.querySelector<HTMLElement>(".penna-preview .penna-render") ??
+    appRoot.querySelector<HTMLElement>(".penna-render");
+  if (!render) {
+    throw new Error("无法找到预览内容");
+  }
 
-  // 1. Strip out UI components from the clone, leaving only the preview
-  const junkSelectors = [
-    ".penna-toolbar",
-    ".penna-editor",
-    ".penna-sidebar",
-    ".penna-statusbar",
-    ".penna-sidebar-mask",
-    ".penna-divider",
-    ".penna-dialog-host"
-  ];
-  junkSelectors.forEach(selector => {
-    clone.querySelectorAll(selector).forEach(n => n.remove());
-  });
-
-  return clone;
+  const shell = document.createElement("article");
+  shell.id = "penna-export";
+  shell.className = appRoot.className;
+  shell.appendChild(render.cloneNode(true));
+  return shell;
 }
 
 function buildExportHtml(title: string, root: HTMLElement): string {
-  const styles = collectInlineStyles();
-  const cls = root.className
+  const styles = collectDocumentStyles();
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -45,15 +56,23 @@ function buildExportHtml(title: string, root: HTMLElement): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(title)}</title>
   <style>
-    html, body { 
-      margin: 0; 
-      padding: 0; 
-      overflow: visible !important; 
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: auto !important;
+      overflow: visible !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
-    #penna-root { max-width: 800px; margin: 0 auto; }
- 
+    #penna-export {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 100%;
+      background: color-mix(in srgb, var(--penna-c-text-3) 8%, var(--penna-c-bg));
+    }
     ${styles}
     @media print {
       html, body {
@@ -62,15 +81,12 @@ function buildExportHtml(title: string, root: HTMLElement): string {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
-      .penna-export { max-width: none !important; }
+      #penna-export { max-width: none !important; }
     }
   </style>
 </head>
-<body class="${cls}">
-<div class="penna-render" style="min-height: 100%;width:100%;background: color-mix(in srgb,var(--penna-c-text-3) 8%,var(--penna-c-bg))">
+<body>
   ${root.outerHTML}
-</div>
-
 </body>
 </html>`;
 }
@@ -93,7 +109,7 @@ function defaultExportName(docPath: string | null, ext: string): string {
 
 export async function exportHtml(docPath: string | null): Promise<boolean> {
   const title = docPath ? basename(docPath) : "Penna Markdown";
-  const html = buildExportHtml(title, getPreviewHtml());
+  const html = buildExportHtml(title, getExportRoot());
   const target = await save({
     defaultPath: defaultExportName(docPath, "html"),
     filters: [{ name: "HTML", extensions: ["html"] }],
@@ -107,7 +123,7 @@ export async function exportHtml(docPath: string | null): Promise<boolean> {
 
 export async function exportPdf(docPath: string | null): Promise<void> {
   const title = docPath ? basename(docPath) : "Penna Markdown";
-  const html = buildExportHtml(title, getPreviewHtml());
+  const html = buildExportHtml(title, getExportRoot());
 
   // 1. 创建 iframe 承载注入的 html（实现绝对的 CSS 隔离）
   const iframe = document.createElement("iframe");
@@ -151,7 +167,7 @@ export async function exportPdf(docPath: string | null): Promise<void> {
     body.scrollHeight, body.offsetHeight,
     htmlEl.clientHeight, htmlEl.scrollHeight, htmlEl.offsetHeight
   );
-  
+
   // 3. 在主文档注入 @media print 隔离样式
   const style = document.createElement("style");
   style.id = "penna-print-isolation";
@@ -194,10 +210,10 @@ export async function exportPdf(docPath: string | null): Promise<void> {
       document.body.removeChild(style);
     }
   };
-  
+
   // 绑定在宿主 window 上，因为我们要调用的是宿主的打印
   window.addEventListener("afterprint", cleanup);
-  
+
   try {
     // 4. 不再调用 iframe.print()，而是用 Tauri 的原生打印打印宿主
     // 因为宿主已被 @media print 劫持，实际上只会打印 iframe 里的内容
