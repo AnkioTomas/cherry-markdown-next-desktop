@@ -20,6 +20,7 @@ import { PennaConfig, type UploadMode } from "../host/PennaConfig";
 import { PennaUploader } from "../host/PennaUploader";
 import { DocumentSession } from "./DocumentSession";
 import { exportHtml, exportPdf } from "./exportDocument";
+import { bindPreviewLinkGuard } from "./previewLinkGuard";
 import { SettingsPanel } from "./SettingsPanel";
 import "../themes.css";
 import "../styles.css";
@@ -78,15 +79,16 @@ export class PennaDesktopApp {
     }
     this.bindWindowEvents();
     this.bindAppearanceWatcher();
-    
+    bindPreviewLinkGuard(this.root);
+
     // 先处理启动参数和拖拽事件加载文件
     await this.bindOpenFileEvents();
-    
+
     // 如果没有通过启动参数创建出编辑器，则用空文档兜底创建
     if (!this.editor) {
       this.createEditor(this.buildBoot());
     }
-    
+
     await this.session.refreshTitle();
   }
 
