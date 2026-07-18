@@ -19,6 +19,7 @@ import { PennaAi } from "../host/PennaAi";
 import { PennaConfig, type UploadMode } from "../host/PennaConfig";
 import { PennaUploader } from "../host/PennaUploader";
 import { DocumentSession } from "./DocumentSession";
+import { copyToWechat } from "./copyToWechat";
 import { exportHtml, exportPdf } from "./exportDocument";
 import { bindPreviewLinkGuard } from "./previewLinkGuard";
 import { SettingsPanel } from "./SettingsPanel";
@@ -380,6 +381,12 @@ export class PennaDesktopApp {
                 void this.handleExportPdf();
               },
             },
+            {
+              text: "复制到公众号",
+              action: () => {
+                void this.handleCopyToWechat();
+              },
+            },
           ],
         },
         {
@@ -585,6 +592,30 @@ export class PennaDesktopApp {
       const msg = error instanceof Error ? error.message : String(error);
       await message(`导出 PDF 失败: ${msg}`, {
         title: "导出失败",
+        kind: "error",
+      });
+    }
+  }
+
+  private async handleCopyToWechat(): Promise<void> {
+    this.syncFromEditor();
+    try {
+      const { localImageCount } = await copyToWechat();
+      if (localImageCount > 0) {
+        await message(
+          `已复制到剪贴板，可粘贴到公众号后台。\n\n检测到 ${localImageCount} 张本地图片在公众号中无法显示，请改用图床或素材库 URL。`,
+          { title: "复制到公众号", kind: "warning" },
+        );
+      } else {
+        await message("已复制到剪贴板，可粘贴到公众号后台。", {
+          title: "复制到公众号",
+          kind: "info",
+        });
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await message(`复制失败: ${msg}`, {
+        title: "复制到公众号",
         kind: "error",
       });
     }
