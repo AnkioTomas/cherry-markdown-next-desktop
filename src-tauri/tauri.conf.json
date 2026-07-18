@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Cherry Markdown Next",
+  "productName": "Penna Markdown",
   "version": "0.0.5",
-  "identifier": "net.ankio.cherry-markdown-next-desktop",
+  "identifier": "net.ankio.penna-markdown-desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Cherry Markdown Next",
+        "title": "Penna Markdown",
         "width": 1280,
         "height": 800,
         "resizable": true,

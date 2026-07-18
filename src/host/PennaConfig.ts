@@ -48,8 +48,8 @@ export const CONFIG_DEFAULTS: Record<string, unknown> = {
 
 const DEFAULTS = CONFIG_DEFAULTS;
 
-export class CherryConfig {
-  private readonly store = new LazyStore("cherry-config.json");
+export class PennaConfig {
+  private readonly store = new LazyStore("penna-config.json");
   private readonly cache = new Map<string, unknown>();
   private readonly listeners = new Set<ConfigListener>();
   private loaded = false;

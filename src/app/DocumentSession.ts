@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { readDir, readTextFile, stat, writeTextFile } from "@tauri-apps/plugin-fs";
-import type { CherryFileItem } from "cherry-markdown-next";
+import type { PennaFileItem } from "penna-markdown";
 import { basename, dirname, join } from "../host/path";
 
 const UNTITLED = "Untitled.md";
@@ -122,7 +122,7 @@ export class DocumentSession {
   }
 
   /** 供编辑器侧栏 `fetchFiles`：递归列出工作区内的 Markdown 文件。 */
-  async listWorkspaceFiles(): Promise<CherryFileItem[]> {
+  async listWorkspaceFiles(): Promise<PennaFileItem[]> {
     const root = this.folderRoot;
     if (!root) {
       return [];
@@ -132,7 +132,7 @@ export class DocumentSession {
     await this.collectMarkdownFiles(root, paths);
     paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-    const items: CherryFileItem[] = [];
+    const items: PennaFileItem[] = [];
     for (const filePath of paths) {
       let updateTime = "";
       let summary = "";
@@ -143,7 +143,7 @@ export class DocumentSession {
         }
         summary = firstSummaryLine(await readTextFile(filePath));
       } catch (error) {
-        console.warn("[cherry-desktop] skip file meta", filePath, error);
+        console.warn("[penna-desktop] skip file meta", filePath, error);
       }
       items.push({
         id: filePath,
@@ -228,7 +228,7 @@ export class DocumentSession {
       : this.folderRoot
         ? `${basename(this.folderRoot)}/`
         : UNTITLED;
-    const title = `${this.isDirty() ? "• " : ""}${name} — Cherry Markdown Next`;
+    const title = `${this.isDirty() ? "• " : ""}${name} — Penna Markdown`;
     await getCurrentWindow().setTitle(title);
   }
 

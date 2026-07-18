@@ -1,5 +1,5 @@
 
-import type { AiActionId, AiProvider, CherryConfig } from "./CherryConfig";
+import type { AiActionId, AiProvider, PennaConfig } from "./PennaConfig";
 
 interface AiProviderPreset {
   label: string;
@@ -44,7 +44,7 @@ export const AI_OUTPUT_RULES = `
 输出规则（必须遵守）：
 1. 只输出处理后的 Markdown 正文，不要开场白、不要总结、不要「如下所示」之类说明。
 2. 不要用 \`\`\`markdown 包裹整个结果；原文里已有的代码块照常保留。
-3. 保留原有 Markdown 结构：标题层级、列表、引用、表格、链接、图片、脚注、GFM/Cherry 扩展语法（Alert、容器、卡片等）能保留则保留。
+3. 保留原有 Markdown 结构：标题层级、列表、引用、表格、链接、图片、脚注、GFM/Penna 扩展语法（Alert、容器、卡片等）能保留则保留。
 4. 行内代码、代码块、公式、URL、锚点 id、frontmatter 键名不要擅自改写。
 5. 若原文为空或无需改动，仍返回合理结果（摘要类可给出简短说明；其余尽量保持可替换文本）。
 `.trim();
@@ -136,8 +136,8 @@ interface ChatCompletionChunk {
   error?: { message?: string };
 }
 
-export class CherryAi {
-  constructor(private readonly config: CherryConfig) {}
+export class PennaAi {
+  constructor(private readonly config: PennaConfig) {}
 
   /**
    * 适配编辑器 `OnAiRequest`：

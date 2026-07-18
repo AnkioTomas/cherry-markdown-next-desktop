@@ -11,7 +11,7 @@ function collectInlineStyles(): string {
 }
 
 function getPreviewHtml(): HTMLElement {
-  const rootElement = document.querySelector<HTMLElement>("#cherry-root");
+  const rootElement = document.querySelector<HTMLElement>("#penna-root");
   if (!rootElement) {
     throw new Error("无法找到编辑器根节点");
   }
@@ -20,13 +20,13 @@ function getPreviewHtml(): HTMLElement {
 
   // 1. Strip out UI components from the clone, leaving only the preview
   const junkSelectors = [
-    ".cherry-toolbar",
-    ".cherry-editor",
-    ".cherry-sidebar",
-    ".cherry-statusbar",
-    ".cherry-sidebar-mask",
-    ".cherry-divider",
-    ".cherry-dialog-host"
+    ".penna-toolbar",
+    ".penna-editor",
+    ".penna-sidebar",
+    ".penna-statusbar",
+    ".penna-sidebar-mask",
+    ".penna-divider",
+    ".penna-dialog-host"
   ];
   junkSelectors.forEach(selector => {
     clone.querySelectorAll(selector).forEach(n => n.remove());
@@ -52,7 +52,7 @@ function buildExportHtml(title: string, root: HTMLElement): string {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
-    #cherry-root { max-width: 800px; margin: 0 auto; }
+    #penna-root { max-width: 800px; margin: 0 auto; }
  
     ${styles}
     @media print {
@@ -62,12 +62,12 @@ function buildExportHtml(title: string, root: HTMLElement): string {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
-      .cherry-export { max-width: none !important; }
+      .penna-export { max-width: none !important; }
     }
   </style>
 </head>
 <body class="${cls}">
-<div class="cherry-render" style="min-height: 100%;width:100%;background: color-mix(in srgb,var(--cherry-c-text-3) 8%,var(--cherry-c-bg))">
+<div class="penna-render" style="min-height: 100%;width:100%;background: color-mix(in srgb,var(--penna-c-text-3) 8%,var(--penna-c-bg))">
   ${root.outerHTML}
 </div>
 
@@ -92,7 +92,7 @@ function defaultExportName(docPath: string | null, ext: string): string {
 }
 
 export async function exportHtml(docPath: string | null): Promise<boolean> {
-  const title = docPath ? basename(docPath) : "Cherry Markdown";
+  const title = docPath ? basename(docPath) : "Penna Markdown";
   const html = buildExportHtml(title, getPreviewHtml());
   const target = await save({
     defaultPath: defaultExportName(docPath, "html"),
@@ -106,12 +106,12 @@ export async function exportHtml(docPath: string | null): Promise<boolean> {
 }
 
 export async function exportPdf(docPath: string | null): Promise<void> {
-  const title = docPath ? basename(docPath) : "Cherry Markdown";
+  const title = docPath ? basename(docPath) : "Penna Markdown";
   const html = buildExportHtml(title, getPreviewHtml());
 
   // 1. 创建 iframe 承载注入的 html（实现绝对的 CSS 隔离）
   const iframe = document.createElement("iframe");
-  iframe.id = "cherry-print-iframe";
+  iframe.id = "penna-print-iframe";
   iframe.setAttribute("scrolling", "no");
   iframe.style.position = "absolute";
   iframe.style.top = "-9999px";
@@ -154,10 +154,10 @@ export async function exportPdf(docPath: string | null): Promise<void> {
   
   // 3. 在主文档注入 @media print 隔离样式
   const style = document.createElement("style");
-  style.id = "cherry-print-isolation";
+  style.id = "penna-print-isolation";
   style.textContent = `
     @media screen {
-      #cherry-print-iframe { display: none !important; }
+      #penna-print-iframe { display: none !important; }
     }
     @media print {
       /* 重置宿主高度限制，允许分页 */
@@ -171,11 +171,11 @@ export async function exportPdf(docPath: string | null): Promise<void> {
         background: transparent !important;
       }
       /* 隐藏所有原生 UI，只保留 iframe 和隔离样式表 */
-      body > *:not(#cherry-print-iframe):not(#cherry-print-isolation) {
+      body > *:not(#penna-print-iframe):not(#penna-print-isolation) {
         display: none !important;
       }
       /* 将 iframe 暴露给系统打印机，并应用实际高度 */
-      #cherry-print-iframe {
+      #penna-print-iframe {
         display: block !important;
         position: static !important;
         width: 100% !important;

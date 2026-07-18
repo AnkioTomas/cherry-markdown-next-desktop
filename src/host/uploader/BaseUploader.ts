@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CherryConfig } from "../CherryConfig";
+import type { PennaConfig } from "../PennaConfig";
 import { basename, extname, isAbsolute, resolve } from "../path";
 
 export interface UploadResult {
@@ -13,7 +13,7 @@ export interface UploadResult {
 export abstract class BaseUploader {
   constructor(
     protected readonly documentPath: string,
-    protected readonly config: CherryConfig,
+    protected readonly config: PennaConfig,
   ) {}
 
   abstract upload(tempPath: string, originalName: string): Promise<UploadResult>;

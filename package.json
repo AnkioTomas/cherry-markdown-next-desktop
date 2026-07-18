@@ -1,5 +1,5 @@
 {
-  "name": "cherry-markdown-next-desktop",
+  "name": "penna-markdown-desktop",
   "version": "0.0.5",
   "description": "",
   "main": "dist/index.js",
@@ -22,6 +22,6 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-store": "^2.4.3",
-    "cherry-markdown-next": "^0.1.6"
+    "penna-markdown": "^0.1.6"
   }
 }

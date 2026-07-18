@@ -1,13 +1,13 @@
 import {
-  Cherry,
+  Penna,
   DEFAULT_TOOLBAR_ITEMS,
-  type CherryOptions,
+  type PennaOptions,
   type EditorOptions,
   type SideBarOptions,
   type ToolbarItem,
-} from "cherry-markdown-next";
-import "cherry-markdown-next/editor.css";
-import "cherry-markdown-next/transformer.css";
+} from "penna-markdown";
+import "penna-markdown/editor.css";
+import "penna-markdown/transformer.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
@@ -15,9 +15,9 @@ import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Menu } from "@tauri-apps/api/menu";
 import { stat } from "@tauri-apps/plugin-fs";
-import { CherryAi } from "../host/CherryAi";
-import { CherryConfig, type UploadMode } from "../host/CherryConfig";
-import { CherryUploader } from "../host/CherryUploader";
+import { PennaAi } from "../host/PennaAi";
+import { PennaConfig, type UploadMode } from "../host/PennaConfig";
+import { PennaUploader } from "../host/PennaUploader";
 import { DocumentSession } from "./DocumentSession";
 import { exportHtml, exportPdf } from "./exportDocument";
 import { SettingsPanel } from "./SettingsPanel";
@@ -28,7 +28,7 @@ interface EditorChangePayload {
   markdown: string;
 }
 
-interface CherryBoot {
+interface PennaBoot {
   text: string;
   appearance: "light" | "dark";
   layout: string;
@@ -51,17 +51,17 @@ function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown)$/i.test(path);
 }
 
-export class CherryDesktopApp {
+export class PennaDesktopApp {
   private readonly root: HTMLElement;
-  private readonly config = new CherryConfig();
+  private readonly config = new PennaConfig();
   private readonly session = new DocumentSession();
   private readonly settings: SettingsPanel;
-  private editor: Cherry | null = null;
+  private editor: Penna | null = null;
 
   constructor() {
-    const rootEl = document.getElementById("cherry-root");
+    const rootEl = document.getElementById("penna-root");
     if (!rootEl) {
-      throw new Error("Missing #cherry-root");
+      throw new Error("Missing #penna-root");
     }
     this.root = rootEl;
     this.settings = new SettingsPanel(this.config, () => {
@@ -74,7 +74,7 @@ export class CherryDesktopApp {
     try {
       await this.setupMenu();
     } catch (error) {
-      console.warn("[cherry-desktop] menu setup failed", error);
+      console.warn("[penna-desktop] menu setup failed", error);
     }
     this.bindWindowEvents();
     this.bindAppearanceWatcher();
@@ -103,7 +103,7 @@ export class CherryDesktopApp {
     return true;
   }
 
-  private buildBoot(): CherryBoot {
+  private buildBoot(): PennaBoot {
     return {
       text: this.session.getText(),
       appearance: resolveAppearance(),
@@ -119,7 +119,7 @@ export class CherryDesktopApp {
 
 
 
-  private buildEditorOptions(boot: CherryBoot): EditorOptions {
+  private buildEditorOptions(boot: PennaBoot): EditorOptions {
     const editorOptions: EditorOptions = {
       value: boot.text,
       lineNumbers: boot.lineNumbers,
@@ -135,7 +135,7 @@ export class CherryDesktopApp {
           }
           const buffer = await file.arrayBuffer();
           const bytes = new Uint8Array(buffer);
-          return await new CherryUploader(path, this.config).upload({
+          return await new PennaUploader(path, this.config).upload({
             name: file.name,
             mime: file.type,
             bytes,
@@ -159,7 +159,7 @@ export class CherryDesktopApp {
         onUpdate,
       ) => {
         try {
-          return await new CherryAi(this.config).request(
+          return await new PennaAi(this.config).request(
             action,
             selected,
             prompts,
@@ -195,14 +195,14 @@ export class CherryDesktopApp {
     };
   }
 
-  private createEditor(boot: CherryBoot): void {
+  private createEditor(boot: PennaBoot): void {
     if (this.editor) {
       this.editor.destroy();
       this.editor = null;
     }
 
-    const options: CherryOptions = {
-      layout: boot.layout as CherryOptions["layout"],
+    const options: PennaOptions = {
+      layout: boot.layout as PennaOptions["layout"],
       appearance: boot.appearance,
       themeId: boot.theme,
       statusbar: boot.statusbar,
@@ -215,7 +215,7 @@ export class CherryDesktopApp {
       editor: this.buildEditorOptions(boot),
     };
 
-    this.editor = new Cherry(this.root, options);
+    this.editor = new Penna(this.root, options);
     this.editor.eventBus.on("editor:change", (payload: EditorChangePayload) => {
       this.session.setText(payload.markdown);
     });
@@ -241,10 +241,10 @@ export class CherryDesktopApp {
   }
 
   /**
-   * 递归转换器：将 Cherry Markdown 的 Web 工具栏 JSON 配置，
+   * 递归转换器：将 Penna Markdown 的 Web 工具栏 JSON 配置，
    * 一比一映射转换为 Tauri 的原生菜单系统（包括多级子菜单和快捷键）。
    */
-  private mapCherryToolbarToTauriItems(items: ToolbarItem[], run: (cmd: string) => () => void): any[] {
+  private mapPennaToolbarToTauriItems(items: ToolbarItem[], run: (cmd: string) => () => void): any[] {
     const ACCELERATORS: Record<string, string> = {
       bold: "CmdOrCtrl+B",
       italic: "CmdOrCtrl+I",
@@ -275,7 +275,7 @@ export class CherryDesktopApp {
         if (!menu.children || menu.children.length === 0) continue;
         result.push({
           text: menu.label || menu.id,
-          items: this.mapCherryToolbarToTauriItems(menu.children, run),
+          items: this.mapPennaToolbarToTauriItems(menu.children, run),
         });
       } else {
         const btn = item as any;
@@ -296,21 +296,21 @@ export class CherryDesktopApp {
     const appIcon = await defaultWindowIcon();
     const run = (cmd: string) => () => { this.editor?.runCommand(cmd); };
     
-    const dynamicItems = this.mapCherryToolbarToTauriItems(DEFAULT_TOOLBAR_ITEMS, run);
+    const dynamicItems = this.mapPennaToolbarToTauriItems(DEFAULT_TOOLBAR_ITEMS, run);
 
     const menu = await Menu.new({
       items: [
         {
-          text: "Cherry Markdown Next",
+          text: "Penna Markdown",
           items: [
             {
               item: {
                 About: {
-                  name: "Cherry Markdown Next",
+                  name: "Penna Markdown",
                   icon: appIcon ?? undefined,
                 },
               },
-              text: "关于 Cherry Markdown Next",
+              text: "关于 Penna Markdown",
             },
             { item: "Separator" },
             {
@@ -449,7 +449,7 @@ export class CherryDesktopApp {
               }
             }
           } catch (error) {
-            console.error("[cherry-desktop] drag drop handle failed", error);
+            console.error("[penna-desktop] drag drop handle failed", error);
           }
         }
       }
@@ -476,7 +476,7 @@ export class CherryDesktopApp {
       const startup = await invoke<string[]>("get_startup_files");
       await this.openIncomingFiles(startup);
     } catch (error) {
-      console.warn("[cherry-desktop] get_startup_files failed", error);
+      console.warn("[penna-desktop] get_startup_files failed", error);
     }
   }
 

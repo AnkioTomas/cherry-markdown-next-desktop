@@ -1,9 +1,9 @@
-import type { AiProvider, CherryConfig, UploadMode } from "../host/CherryConfig";
+import type { AiProvider, PennaConfig, UploadMode } from "../host/PennaConfig";
 import {
   AI_ACTION_PROMPTS,
   AI_ACTION_TEMPERATURE,
   AI_PROVIDERS,
-} from "../host/CherryAi";
+} from "../host/PennaAi";
 
 type Field =
   | {
@@ -157,7 +157,7 @@ const AI_FIELDS: Field[] = [
   },
 ];
 
-function storedValue(config: CherryConfig, field: Field): string | boolean {
+function storedValue(config: PennaConfig, field: Field): string | boolean {
   if (field.type === "checkbox") {
     return config.getItem<boolean>(field.key, false);
   }
@@ -167,7 +167,7 @@ function storedValue(config: CherryConfig, field: Field): string | boolean {
   return String(config.getItem<string>(field.key, ""));
 }
 
-function providerPreset(config: CherryConfig): {
+function providerPreset(config: PennaConfig): {
   endpoint: string;
   defaultModel: string;
 } {
@@ -177,7 +177,7 @@ function providerPreset(config: CherryConfig): {
 
 function resolveEmptyMeans(
   field: Field,
-  config: CherryConfig,
+  config: PennaConfig,
 ): string | undefined {
   if (field.type === "select" || field.type === "checkbox") {
     return undefined;
@@ -191,17 +191,17 @@ function resolveEmptyMeans(
   return field.emptyMeans;
 }
 
-function renderFields(fields: Field[], config: CherryConfig): string {
+function renderFields(fields: Field[], config: PennaConfig): string {
   return fields
     .map((field) => {
       const stored = storedValue(config, field);
       const id = `cfg-${field.key}`;
       const hint = field.hint
-        ? `<span class="cherry-dialog-table-hint">${escapeHtml(field.hint)}</span>`
+        ? `<span class="penna-dialog-table-hint">${escapeHtml(field.hint)}</span>`
         : "";
 
       if (field.type === "checkbox") {
-        return `<label class="cherry-dialog-field cherry-dialog-field--check" for="${id}"><input id="${id}" data-key="${field.key}" type="checkbox" ${stored ? "checked" : ""} /><span>${escapeHtml(field.label)}</span></label>`;
+        return `<label class="penna-dialog-field penna-dialog-field--check" for="${id}"><input id="${id}" data-key="${field.key}" type="checkbox" ${stored ? "checked" : ""} /><span>${escapeHtml(field.label)}</span></label>`;
       }
 
       if (field.type === "select") {
@@ -211,7 +211,7 @@ function renderFields(fields: Field[], config: CherryConfig): string {
               `<option value="${opt.value}" ${opt.value === stored ? "selected" : ""}>${escapeHtml(opt.label)}</option>`,
           )
           .join("");
-        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" data-key="${field.key}">${options}</select>${hint}</label>`;
+        return `<label class="penna-dialog-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" data-key="${field.key}">${options}</select>${hint}</label>`;
       }
 
       const emptyMeans = resolveEmptyMeans(field, config) ?? "";
@@ -228,7 +228,7 @@ function renderFields(fields: Field[], config: CherryConfig): string {
           : emptyMeans
             ? ` data-builtin="${escapeHtml(emptyMeans)}"`
             : "";
-        return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" data-key="${field.key}" rows="6"${builtinAttr} placeholder="${escapeHtml(emptyMeans)}">${escapeHtml(display)}</textarea>${hint}</label>`;
+        return `<label class="penna-dialog-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" data-key="${field.key}" rows="6"${builtinAttr} placeholder="${escapeHtml(emptyMeans)}">${escapeHtml(display)}</textarea>${hint}</label>`;
       }
 
       // 短文本 / 数字：用 placeholder 展示内置默认，不污染已存值
@@ -239,14 +239,14 @@ function renderFields(fields: Field[], config: CherryConfig): string {
         field.key === "ai.endpoint" || field.key === "ai.model"
           ? ` data-provider-bound="${field.key === "ai.endpoint" ? "endpoint" : "model"}"`
           : "";
-      return `<label class="cherry-dialog-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" data-key="${field.key}" type="${field.type}" value="${escapeHtml(String(stored))}"${placeholder}${providerBound} />${hint}</label>`;
+      return `<label class="penna-dialog-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" data-key="${field.key}" type="${field.type}" value="${escapeHtml(String(stored))}"${placeholder}${providerBound} />${hint}</label>`;
     })
     .join("");
 }
 
-function renderSection(title: string, fields: Field[], config: CherryConfig): string {
+function renderSection(title: string, fields: Field[], config: PennaConfig): string {
   return `
-    <p class="cherry-dialog-table-hint cherry-dialog-section">${escapeHtml(title)}</p>
+    <p class="penna-dialog-table-hint penna-dialog-section">${escapeHtml(title)}</p>
     ${renderFields(fields, config)}
   `;
 }
@@ -325,7 +325,7 @@ export class SettingsPanel {
   };
 
   constructor(
-    private readonly config: CherryConfig,
+    private readonly config: PennaConfig,
     private readonly onSaved: () => void,
   ) {}
 
@@ -335,28 +335,28 @@ export class SettingsPanel {
     }
 
     const mount =
-      document.querySelector<HTMLElement>("#cherry-root .cherry") ??
-      document.getElementById("cherry-root");
+      document.querySelector<HTMLElement>("#penna-root .penna") ??
+      document.getElementById("penna-root");
     if (!mount) {
-      throw new Error("Missing cherry mount for settings dialog");
+      throw new Error("Missing penna mount for settings dialog");
     }
 
     const host = document.createElement("div");
-    host.className = "cherry-dialog-host";
+    host.className = "penna-dialog-host";
     host.innerHTML = `
-      <button type="button" class="cherry-dialog-backdrop" aria-label="关闭"></button>
-      <div class="cherry-dialog-panel" role="dialog" aria-modal="true">
-        <div class="cherry-dialog-body">
-          <form class="cherry-dialog-form cherry-dialog-form--settings">
-            <div class="cherry-dialog-table-head">
-              <span class="cherry-dialog-table-title">设置</span>
+      <button type="button" class="penna-dialog-backdrop" aria-label="关闭"></button>
+      <div class="penna-dialog-panel" role="dialog" aria-modal="true">
+        <div class="penna-dialog-body">
+          <form class="penna-dialog-form penna-dialog-form--settings">
+            <div class="penna-dialog-table-head">
+              <span class="penna-dialog-table-title">设置</span>
             </div>
-            <div class="cherry-dialog-form-scroll-area">
+            <div class="penna-dialog-form-scroll-area">
               ${renderSection("界面", UI_FIELDS, this.config)}
               ${renderSection("文件上传", UPLOAD_FIELDS, this.config)}
               ${renderSection("AI", AI_FIELDS, this.config)}
             </div>
-            <div class="cherry-dialog-actions">
+            <div class="penna-dialog-actions">
               <button type="button" data-action="cancel">取消</button>
               <button type="button" class="is-primary" data-action="save">保存</button>
             </div>
@@ -366,7 +366,7 @@ export class SettingsPanel {
     `;
 
     host
-      .querySelector(".cherry-dialog-backdrop")
+      .querySelector(".penna-dialog-backdrop")
       ?.addEventListener("click", () => this.close());
     host
       .querySelector('[data-action="cancel"]')

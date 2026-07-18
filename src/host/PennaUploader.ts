@@ -1,6 +1,6 @@
 import {tempDir} from "@tauri-apps/api/path";
 import {mkdir, remove, writeFile} from "@tauri-apps/plugin-fs";
-import type {CherryConfig, UploadMode} from "./CherryConfig";
+import type {PennaConfig, UploadMode} from "./PennaConfig";
 import {join} from "./path";
 import type {BaseUploader, UploadResult} from "./uploader/BaseUploader";
 import {LocalUploader} from "./uploader/LocalUploader";
@@ -19,10 +19,10 @@ export interface UploadRequest {
 /**
  * 上传门面：base64 → 临时文件 → 按 mode 交给具体 Uploader → 清理临时目录。
  */
-export class CherryUploader {
+export class PennaUploader {
   constructor(
     private readonly documentPath: string,
-    private readonly config: CherryConfig,
+    private readonly config: PennaConfig,
   ) {}
 
   public async upload(request: UploadRequest): Promise<UploadResult> {
@@ -36,7 +36,7 @@ export class CherryUploader {
 
     const uploader = this.createUploader(mode);
     const root = await tempDir();
-    const tmpDir = join(root, `cherry-upload-${Date.now()}`);
+    const tmpDir = join(root, `penna-upload-${Date.now()}`);
     const fileName = this.uniqueFileName(request.name);
     const tmpFile = join(tmpDir, fileName);
 

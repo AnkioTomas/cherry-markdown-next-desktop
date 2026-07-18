@@ -57,8 +57,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: cherry-v__VERSION__
-          releaseName: 'Cherry Markdown Next v__VERSION__'
+          tagName: penna-v__VERSION__
+          releaseName: 'Penna Markdown v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
