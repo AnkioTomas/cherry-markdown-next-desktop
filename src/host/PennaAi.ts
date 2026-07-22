@@ -167,24 +167,30 @@ export class PennaAi {
       headers.Authorization = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userContent },
-        ],
-        temperature,
-        stream: Boolean(onUpdate),
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userContent },
+          ],
+          temperature,
+          stream: Boolean(onUpdate),
+        }),
+      });
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      throw new Error(`网络连接失败: ${raw}`);
+    }
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       throw new Error(
-        `AI 请求失败 HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+        `响应错误 HTTP ${response.status}${detail ? `\n原始响应: ${detail.slice(0, 500)}` : ""}`,
       );
     }
 
@@ -192,18 +198,33 @@ export class PennaAi {
       return this.consumeStream(response, onUpdate);
     }
 
-    const data = (await response.json()) as {
+    let rawBody = "";
+    try {
+      rawBody = await response.text();
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      throw new Error(`网络连接失败: ${raw}`);
+    }
+
+    let data: {
       choices?: Array<{ message?: { content?: string } }>;
       error?: { message?: string };
     };
+    try {
+      data = JSON.parse(rawBody) as typeof data;
+    } catch {
+      throw new Error(`响应错误: 非 JSON\n原始响应: ${rawBody.slice(0, 500)}`);
+    }
 
     if (data.error?.message) {
-      throw new Error(`AI 响应错误: ${data.error.message}`);
+      throw new Error(
+        `响应错误: ${data.error.message}\n原始响应: ${rawBody.slice(0, 500)}`,
+      );
     }
 
     const content = data.choices?.[0]?.message?.content?.trim();
     if (!content) {
-      throw new Error("AI 响应缺少内容");
+      throw new Error(`响应错误: 缺少内容\n原始响应: ${rawBody.slice(0, 500)}`);
     }
     return this.stripModelFences(content);
   }
@@ -213,7 +234,7 @@ export class PennaAi {
     onUpdate: AiOnUpdate,
   ): Promise<string> {
     if (!response.body) {
-      throw new Error("AI 流式响应缺少 body");
+      throw new Error("响应错误: 流式响应缺少 body");
     }
 
     const reader = response.body.getReader();
@@ -223,7 +244,14 @@ export class PennaAi {
     let thinking = "";
 
     while (true) {
-      const { done, value } = await reader.read();
+      let done: boolean;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        throw new Error(`网络连接失败: ${raw}`);
+      }
       if (done) {
         break;
       }
@@ -249,7 +277,9 @@ export class PennaAi {
         }
 
         if (chunk.error?.message) {
-          throw new Error(`AI 响应错误: ${chunk.error.message}`);
+          throw new Error(
+            `响应错误: ${chunk.error.message}\n原始响应: ${data.slice(0, 500)}`,
+          );
         }
 
         const delta = chunk.choices?.[0]?.delta;
@@ -276,7 +306,7 @@ export class PennaAi {
 
     const final = this.stripModelFences(content);
     if (!final) {
-      throw new Error("AI 响应缺少内容");
+      throw new Error("响应错误: 缺少内容");
     }
     return final;
   }
