@@ -23,6 +23,54 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            CURRENT_TAG="${GITHUB_REF_NAME}"
+          else
+            CURRENT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          fi
+
+          if [[ -z "${CURRENT_TAG}" ]]; then
+            CURRENT_TAG="HEAD"
+          fi
+
+          PREV_TAG="$(
+            git tag --sort=-version:refname \
+              | awk -v cur="${CURRENT_TAG}" '$0 == cur { getline; print; exit }'
+          )"
+
+          {
+            echo "## 更新日志"
+            echo
+            if [[ -n "${PREV_TAG}" ]]; then
+              echo "对比: \`${PREV_TAG}\` → \`${CURRENT_TAG}\`"
+              echo
+              git log --pretty=format:'- %s (%h)' "${PREV_TAG}..${CURRENT_TAG}"
+            else
+              echo "首个发布"
+              echo
+              git log --pretty=format:'- %s (%h)' "${CURRENT_TAG}"
+            fi
+            echo
+          } > release-notes.md
+
+          {
+            echo 'body<<EOF'
+            cat release-notes.md
+            echo
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          echo "----- release notes -----"
+          cat release-notes.md
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -42,6 +90,8 @@ jobs:
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -59,7 +109,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'Penna Markdown v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
